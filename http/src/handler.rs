@@ -1,11 +1,14 @@
 use crate::WeakRpc;
 
 use std::future::Future;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{self, Poll};
+use std::time::Instant;
 use std::{fmt, mem, str};
 
+use futures::FutureExt;
 use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{self, service::Service, Body, Method};
 
@@ -28,6 +31,7 @@ pub struct ServerHandler<M: Metadata = (), S: Middleware<M> = middleware::Noop> 
 	health_api: Option<(String, String)>,
 	max_request_body_size: usize,
 	keep_alive: bool,
+	remote_addr: SocketAddr,
 }
 
 impl<M: Metadata, S: Middleware<M>> ServerHandler<M, S> {
@@ -43,6 +47,7 @@ impl<M: Metadata, S: Middleware<M>> ServerHandler<M, S> {
 		health_api: Option<(String, String)>,
 		max_request_body_size: usize,
 		keep_alive: bool,
+		remote_addr: SocketAddr,
 	) -> Self {
 		ServerHandler {
 			jsonrpc_handler,
@@ -55,6 +60,7 @@ impl<M: Metadata, S: Middleware<M>> ServerHandler<M, S> {
 			health_api,
 			max_request_body_size,
 			keep_alive,
+			remote_addr,
 		}
 	}
 }
@@ -74,6 +80,7 @@ where
 	}
 
 	fn call(&mut self, request: hyper::Request<Body>) -> Self::Future {
+		let info = RpcHandlerInfo::new(&request, self.remote_addr);
 		let is_host_allowed = utils::is_host_allowed(&request, &self.allowed_hosts);
 		let action = self.middleware.on_request(request);
 
@@ -95,9 +102,16 @@ where
 
 		// Replace response with the one returned by middleware.
 		match response {
-			Ok(response) => Handler::Middleware(response),
+			Ok(response) => Handler::Middleware(
+				response
+					.inspect(move |_output| {
+						info.log();
+					})
+					.boxed(),
+			),
 			Err(request) => {
 				Handler::Rpc(RpcHandler {
+					info,
 					jsonrpc_handler: self.jsonrpc_handler.clone(),
 					state: RpcHandlerState::ReadingHeaders {
 						request,
@@ -207,7 +221,39 @@ impl<M> fmt::Debug for RpcHandlerState<M> {
 	}
 }
 
+struct RpcHandlerInfo {
+	timestamp: Instant,
+	remote_addr: SocketAddr,
+	uri: hyper::Uri,
+	method: Method,
+	response_size: Option<usize>,
+}
+
+impl RpcHandlerInfo {
+	fn new(request: &hyper::Request<Body>, remote_addr: SocketAddr) -> Self {
+		Self {
+			timestamp: Instant::now(),
+			remote_addr,
+			uri: request.uri().clone(),
+			method: request.method().clone(),
+			response_size: None,
+		}
+	}
+
+	fn log(&self) {
+		tracing::info!(
+			r#"{} "{:?}" {} {} {:.3}ms"#,
+			self.remote_addr,
+			self.uri,
+			self.method,
+			self.response_size.unwrap_or(0),
+			self.timestamp.elapsed().as_millis()
+		);
+	}
+}
+
 pub struct RpcHandler<M: Metadata, S: Middleware<M>> {
+	info: RpcHandlerInfo,
 	jsonrpc_handler: WeakRpc<M, S>,
 	state: RpcHandlerState<M>,
 	is_options: bool,
@@ -274,12 +320,14 @@ where
 			RpcHandlerState::Waiting(mut waiting) => {
 				match Pin::new(&mut waiting).poll(cx) {
 					Poll::Ready(response) => {
-						RpcPollState::Ready(RpcHandlerState::Writing(match response {
+						let output = match response {
 							// Notification, just return empty response.
-							None => Response::ok(String::new()),
+							None => String::new(),
 							// Add new line to have nice output when using CLI clients (curl)
-							Some(result) => Response::ok(format!("{}\n", result)),
-						}))
+							Some(result) => format!("{}\n", result),
+						};
+						this.info.response_size = Some(output.as_bytes().len());
+						RpcPollState::Ready(RpcHandlerState::Writing(Response::ok(output)))
 					}
 					Poll::Pending => RpcPollState::NotReady(RpcHandlerState::Waiting(waiting)),
 				}
@@ -293,6 +341,8 @@ where
 				let mut response: hyper::Response<Body> = res.into();
 				let cors_allow_origin = mem::replace(&mut this.cors_allow_origin, cors::AllowCors::Invalid);
 				let cors_allow_headers = mem::replace(&mut this.cors_allow_headers, cors::AllowCors::Invalid);
+
+				this.info.log();
 
 				Self::set_response_headers(
 					response.headers_mut(),

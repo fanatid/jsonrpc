@@ -47,7 +47,7 @@ use parking_lot::Mutex;
 use crate::jsonrpc::MetaIoHandler;
 use crate::server_utils::reactor::{Executor, UninitializedExecutor};
 use futures::{channel::oneshot, future};
-use hyper::Body;
+use hyper::{server::conn::AddrStream, Body};
 use jsonrpc_core as jsonrpc;
 
 pub use crate::handler::ServerHandler;
@@ -605,7 +605,7 @@ fn serve<M: jsonrpc::Metadata, S: jsonrpc::Middleware<M>>(
 			// files opened) instead of erroring out the entire server.
 			.tcp_sleep_on_accept_errors(true);
 
-		let service_fn = hyper::service::make_service_fn(move |_addr_stream| {
+		let service_fn = hyper::service::make_service_fn(move |addr_stream: &AddrStream| {
 			let service = ServerHandler::new(
 				jsonrpc_handler.downgrade(),
 				cors_domains.clone(),
@@ -617,6 +617,7 @@ fn serve<M: jsonrpc::Metadata, S: jsonrpc::Middleware<M>>(
 				health_api.clone(),
 				max_request_body_size,
 				keep_alive,
+				addr_stream.remote_addr(),
 			);
 			async { Ok::<_, Infallible>(service) }
 		});
