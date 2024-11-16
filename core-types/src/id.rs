@@ -1,5 +1,7 @@
 //! jsonrpc id field
 
+use serde::{Deserialize, Serialize};
+
 /// Request Id
 #[derive(Debug, PartialEq, Clone, Hash, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

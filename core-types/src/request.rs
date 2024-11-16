@@ -1,6 +1,7 @@
 //! jsonrpc request
 
 use super::{Id, Params, Version};
+use serde::{Deserialize, Serialize};
 
 /// Represents jsonrpc request which is a method call.
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

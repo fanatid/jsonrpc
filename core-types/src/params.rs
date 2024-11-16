@@ -1,6 +1,7 @@
 //! jsonrpc params field
 
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json::value::from_value;
 
 use super::{Error, Value};
@@ -51,7 +52,7 @@ impl From<Params> for Value {
 #[cfg(test)]
 mod tests {
 	use super::Params;
-	use crate::types::{Error, ErrorCode, Value};
+	use crate::{Error, ErrorCode, Value};
 	use serde_json;
 
 	#[test]

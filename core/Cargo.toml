@@ -24,10 +24,13 @@ log = "0.4"
 # re-exported but it's not strictly required for this crate. Either adapt the
 # remaining crates or settle for this re-export to be a single, common dependency
 futures = { version = "0.3", optional = true }
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
 futures-executor = { version = "0.3", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+jsonrpc-core-types = { version = "18.0.0", path = "../core-types" }
 serde = "1.0"
 serde_json = "1.0"
+
+[dev-dependencies]
 serde_derive = "1.0"
 
 [features]

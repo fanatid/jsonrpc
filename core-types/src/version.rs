@@ -1,6 +1,6 @@
 //! jsonrpc version field
 use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de::Deserializer, ser::Serializer, Deserialize, Serialize};
 
 use std::fmt;
 
@@ -33,7 +33,7 @@ impl<'a> Deserialize<'a> for Version {
 
 struct VersionVisitor;
 
-impl<'a> Visitor<'a> for VersionVisitor {
+impl Visitor<'_> for VersionVisitor {
 	type Value = Version;
 
 	fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {

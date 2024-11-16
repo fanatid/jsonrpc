@@ -22,14 +22,15 @@ use std::pin::Pin;
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate serde_derive;
 
 #[cfg(feature = "futures")]
 pub use futures;
 #[cfg(feature = "futures-executor")]
 pub use futures_executor;
 pub use futures_util;
+
+pub use jsonrpc_core_types as types;
+pub use types::*;
 
 #[doc(hidden)]
 pub extern crate serde;
@@ -41,10 +42,6 @@ mod io;
 
 pub mod delegates;
 pub mod middleware;
-pub mod types;
-
-/// A Result type.
-pub type Result<T> = std::result::Result<T, Error>;
 
 /// A `Future` trait object.
 pub type BoxFuture<T> = Pin<Box<dyn std::future::Future<Output = T> + Send>>;
@@ -59,21 +56,3 @@ pub use crate::io::{
 	MetaIoHandler,
 };
 pub use crate::middleware::{Middleware, Noop as NoopMiddleware};
-pub use crate::types::*;
-
-use serde_json::Error as SerdeError;
-
-/// workaround for https://github.com/serde-rs/json/issues/505
-/// Arbitrary precision confuses serde when deserializing into untagged enums,
-/// this is a workaround
-pub fn serde_from_str<'a, T>(input: &'a str) -> std::result::Result<T, SerdeError>
-where
-	T: serde::de::Deserialize<'a>,
-{
-	if cfg!(feature = "arbitrary_precision") {
-		let val = serde_json::from_str::<Value>(input)?;
-		T::deserialize(val)
-	} else {
-		serde_json::from_str::<T>(input)
-	}
-}
